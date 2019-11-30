@@ -1,16 +1,31 @@
 #include <LedControl.h>
 
 struct cell {
-   int a;
-   int b;
+   int x;
+   int y;
 };
 
-struct cell f(int x, int y) {
-   struct cell ang;
-   ang.a = x;
-   ang.b = y;
-   return ang;
+struct shift {
+   int x_shift;
+   int y_shift;
+};
+
+struct shift CreateShift(int a, int b) {
+   struct shift new_shift;
+   new_shift.x_shift = a;
+   new_shift.y_shift = b;
+   return new_shift;
 }
+
+struct cell CreateCell(int a, int b) {
+   struct cell new_cell;
+   new_cell.x = a;
+   new_cell.y = b;
+   return new_cell;
+}
+
+String commandarray[4] = {"Up", "Down", "Right", "Left"};
+shift shiftarray[4] = {CreateShift(0, 1), CreateShift(0, -1), CreateShift(1, 0), CreateShift(-1, 0)};
 
 const int displaysCount = 4;
 const int dataPin = 12;
@@ -18,26 +33,13 @@ const int clkPin = 10;
 const int csPin = 11;
 LedControl lc = LedControl(dataPin, clkPin, csPin, displaysCount);
 
-cell keyUp = f(0, 1);
-cell keyDown = f(0, -1);
-cell keyRight = f(1, 0);
-cell keyLeft = f(-1, 0);
-cell keyNone = f(0, 0);
-cell keyFixation = f(100, 100);
-cell keyGo = f(-1, -1);
-
 const byte rowAmount = 4;
 const byte colAmount = 4;
 
 bool firstMatrix[16][16];
 bool secondMatrix[16][16];
 
-cell keyMatrix[rowAmount][colAmount] = {
-  {keyNone, keyUp,    keyNone,  keyNone},
-  {keyLeft, keyFixation,  keyRight, keyNone},
-  {keyNone, keyDown,  keyNone,  keyNone},
-  {keyNone, keyNone,  keyNone,  keyGo}
-};
+String keyMatrix[rowAmount][colAmount];
 
 static bool keyDownMatrix[rowAmount][colAmount];
 
@@ -47,6 +49,15 @@ byte colPins[colAmount] = { 6, 7, 8, 9 };
 
 void setup()
 {
+  for(int i=0;i<4;i++)
+    for(int j=0;j<4;j++)
+        keyMatrix[i][j] = "None";
+  keyMatrix[0][1] = "Up";
+  keyMatrix[1][0] = "Left";
+  keyMatrix[1][2] = "Right";
+  keyMatrix[2][1] = "Down";
+  keyMatrix[2][1] = "Fixation";
+  keyMatrix[3][3] = "Go";
   for(int i=0;i<16;i++)
     for(int j=0;j<16;j++)
         firstMatrix[i][j] = false;
@@ -59,9 +70,7 @@ void setup()
       lc.shutdown(index, false);
       lc.setIntensity(index, 16);
       lc.clearDisplay(index);
-  }
-
-  
+  }  
   for (int i = 0; i < rowAmount; i++) {
     pinMode(rowPins[i], OUTPUT);
     digitalWrite(rowPins[i], HIGH);
@@ -74,103 +83,92 @@ void setup()
   Serial.begin(115200);
 }
 
-cell curent = f(0, 0);
+cell curent = CreateCell(0, 0);
 
 void loop()
 {
-  int place = 0;
-  
-  if (curent.a <= 7 && curent.b <= 7)
-      place = 0;
-  if (curent.a > 7 && curent.b <= 7)
-      place = 3;
-  if (curent.a > 7 && curent.b > 7)
-      place = 2;
-  if (curent.a <= 7 && curent.b > 7)
-      place = 1;
-
-  int x = curent.a;
-  int y = curent.b;
-  if (place == 1)
-      y = y % 8;
-  if (place == 2)
+  int currentDisplay = 0;
+  int x = curent.x;
+  int y = curent.y;
+  GetExactLocation(currentDisplay, x, y);  
+  lc.setLed(currentDisplay, x, y, true);
+  String key = getKey();
+  if(key == "Fixation")
   {
-      x = 15 - x;
-      y = 15 - y;
-  }
-
-  if (place == 3)
-  {
-      x = 15 - x;
-      y = 7 - y;
-  }
-    
-  lc.setLed(place, x, y, true);
-  cell key = getKey();
-  if(key.a == keyFixation.a && key.b == keyFixation.b)
-  {
-     firstMatrix[curent.a][ curent.b] = true;
-     Serial.write("Fix");
-     Serial.write(curent.a);
-     Serial.write(curent.b);
+     firstMatrix[curent.x][ curent.y] = true;     
      return;
   }
-  if(key.a == keyGo.a && key.b == keyGo.b)
+  if(key == "Go")
   {
-    Serial.write("go");
     while(true)
     {
-      PlayGame();
-      Serial.write("yes");
+      PlayGame();      
       for(int i = 0; i < 16; i++)
       {
         for(int j = 0; j < 16; j++)
         {
             int z = i;
             int w = j;
-            
-            if (i <= 7 && j <= 7)
-                place = 0;
-            if (i > 7 && j <= 7)
-                place = 3;
-            if (i > 7 && j > 7)
-                place = 2;
-            if (i <= 7 && j > 7)
-                place = 1;
-
-            if (place == 1)
-                w = w % 8;
-            if (place == 2)
-            {
-                z = 15 - z;
-                w = 15 - w;
-            }
-          
-            if (place == 3)
-            {
-                z = 15 - z;
-                w = 7 - w;
-            }
-              
-            lc.setLed(place, z, w,  firstMatrix[i][j]);
+            GetExactLocation(currentDisplay, z, w);              
+            lc.setLed(currentDisplay, z, w,  firstMatrix[i][j]);
         }
       }
-      delay(2000);
+      delay(500);
     }
   }
-  if (key.a != keyNone.a || key.b != keyNone.b) {
-    if (!firstMatrix[curent.a] [curent.b])
-      lc.setLed(place, x, y, false);
-    int newX = (curent.a + key.a) % 16;
-    int newY = (curent.b + key.b) % 16;
+  if (key != "None") {
+    if (!firstMatrix[curent.x] [curent.y])
+      lc.setLed(currentDisplay, x, y, false);    
+    int place = 0;
+    for(int j = 0; j < 4; j++)
+    {
+      if (commandarray[j] == key)
+         place = j;
+    }
+    int newXShift = shiftarray[place].x_shift;
+    int newYShift = shiftarray[place].y_shift;
+    int newX = (curent.x + newXShift) % 16;
+    int newY = (curent.y + newYShift) % 16;
     if (newX < 0)    
         newX += 16;  
     if (newY < 0)
         newY += 16;
-    curent = f(newX, newY);
+    curent = CreateCell(newX, newY);
   }
 }
 
+
+void GetExactLocation (int & currentDisplay, int & a, int & b)
+{
+    if (a <= 7)
+    {
+      if (b <= 7)
+         currentDisplay = 0;
+      else
+         currentDisplay = 1;      
+    }
+    else
+    {
+      if (b <= 7)
+         currentDisplay = 3;
+      else
+         currentDisplay = 2;      
+    }
+    
+    if (currentDisplay == 1)
+        b = b % 8;
+    if (currentDisplay == 2)
+    {
+        a = 15 - a;
+        b = 15 - b;
+    }
+  
+    if (currentDisplay == 3)
+    {
+        a = 15 - a;
+        b = 7 - b;
+    }
+}
 
 void PlayGame(){
   for(int i = 0; i < 16; i++)
@@ -206,9 +204,9 @@ void PlayGame(){
     }
   }
 }
-cell getKey()
+String getKey()
 {
-  cell result = keyNone;
+  String result = "None";
   for (int i = 0; i < rowAmount; i++) {
     for (int j = 0; j < colAmount; j++) {
       bool isDown = isKeyDown(i, j);
